@@ -1,11 +1,20 @@
 const mongoose = require("mongoose");
 const Attendance = require("../models/Attendance");
+const Mess = require("../models/Mess");
+const { attachMenuToAttendanceRows } = require("../utils/attachHistoryMenu");
+const {
+  normalizeMealType,
+  isMealTimeLocked,
+} = require("../utils/mealHelpers");
+
+if (process.env.ATTENDANCE_RELAX_TIME === "true") {
+  console.log("🚧 ATTENDANCE_RELAX_TIME — meal time locks disabled");
+}
 
 function sendJson(res, status, success, message, data = null) {
   return res.status(status).json({ success, message, data });
 }
 
-/** Calendar day YYYY-MM-DD in the server's local timezone */
 function localCalendarDateString(d = new Date()) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -13,26 +22,30 @@ function localCalendarDateString(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
-/** Server-local time: before 11:00 AM */
-function isBeforeElevenAm() {
-  return new Date().getHours() < 11;
+function existingLunchQuery(userId, day) {
+  return {
+    userId,
+    date: day,
+    $or: [{ mealType: "lunch" }, { mealType: { $exists: false } }],
+  };
 }
 
-/** Whether attendance for `dateStr` can still be edited (same local day, before 11:00) */
-function canEditAttendanceForDate(dateStr) {
-  const today = localCalendarDateString();
-  if (dateStr !== today) {
-    return { allowed: false, reason: "same_day_only" };
+function existingDinnerQuery(userId, day) {
+  return { userId, date: day, mealType: "dinner" };
+}
+
+async function findExistingForMeal(userId, day, mealType) {
+  const m = normalizeMealType(mealType);
+  if (m === "dinner") {
+    return Attendance.findOne(existingDinnerQuery(userId, day));
   }
-  if (!isBeforeElevenAm()) {
-    return { allowed: false, reason: "locked_after_11" };
-  }
-  return { allowed: true };
+  return Attendance.findOne(existingLunchQuery(userId, day));
 }
 
 async function create(req, res) {
   try {
-    const { status, date } = req.body;
+    const { status, date, mealType: bodyMeal } = req.body;
+    const mealType = normalizeMealType(bodyMeal);
     const day = date ? String(date).trim() : localCalendarDateString();
     if (!["Present", "Absent"].includes(status)) {
       return sendJson(res, 400, false, "status must be Present or Absent", null);
@@ -44,18 +57,27 @@ async function create(req, res) {
     if (day !== today) {
       return sendJson(res, 400, false, "You can only record attendance for today", null);
     }
-    if (!isBeforeElevenAm()) {
-      return sendJson(res, 403, false, "Attendance locked after 11:00 AM", null);
+    if (isMealTimeLocked(mealType)) {
+      const msg =
+        mealType === "dinner" ? "Dinner attendance is closed" : "Lunch attendance is closed";
+      return sendJson(res, 403, false, msg, null);
     }
+
+    const exist = await findExistingForMeal(req.user._id, day, mealType);
+    if (exist) {
+      return sendJson(res, 409, false, "Attendance already exists for this date and meal", null);
+    }
+
     const row = await Attendance.create({
       userId: req.user._id,
       date: day,
       status,
+      mealType,
     });
     return sendJson(res, 201, true, "Attendance recorded", { attendance: row });
   } catch (err) {
     if (err.code === 11000) {
-      return sendJson(res, 409, false, "Attendance already exists for this date", null);
+      return sendJson(res, 409, false, "Attendance already exists for this date and meal", null);
     }
     console.error(err);
     return sendJson(res, 500, false, "Internal server error", null);
@@ -64,8 +86,17 @@ async function create(req, res) {
 
 async function getMine(req, res) {
   try {
-    const list = await Attendance.find({ userId: req.user._id }).sort({ date: -1 }).lean();
-    return sendJson(res, 200, true, "Attendance history retrieved", list);
+    const list = await Attendance.find({ userId: req.user._id })
+      .sort({ date: -1, mealType: 1 })
+      .lean();
+    const withMenu = await attachMenuToAttendanceRows(Mess, list);
+    const payload = withMenu.map((r) => {
+      const c = r.cost;
+      const cost =
+        c == null || c === "" || Number.isNaN(Number(c)) ? null : Number(c);
+      return { ...r, cost };
+    });
+    return sendJson(res, 200, true, "Attendance history retrieved", payload);
   } catch (err) {
     console.error(err);
     return sendJson(res, 500, false, "Internal server error", null);
@@ -85,18 +116,20 @@ async function update(req, res) {
     if (!doc) {
       return sendJson(res, 404, false, "Attendance not found", null);
     }
-    const gate = canEditAttendanceForDate(doc.date);
-    if (!gate.allowed) {
-      if (gate.reason === "same_day_only") {
-        return sendJson(
-          res,
-          403,
-          false,
-          "Attendance can only be edited on the same calendar day before 11:00 AM server time.",
-          null
-        );
-      }
-      return sendJson(res, 403, false, "Attendance locked after 11:00 AM", null);
+    const day = localCalendarDateString();
+    if (doc.date !== day) {
+      return sendJson(
+        res,
+        403,
+        false,
+        "You can only edit today's attendance for the current calendar day.",
+        null
+      );
+    }
+    const mealType = normalizeMealType(doc.mealType);
+    if (isMealTimeLocked(mealType)) {
+      const msg = mealType === "dinner" ? "Dinner attendance is closed" : "Lunch attendance is closed";
+      return sendJson(res, 403, false, msg, null);
     }
     doc.status = status;
     await doc.save();
