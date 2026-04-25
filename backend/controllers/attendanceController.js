@@ -26,16 +26,41 @@ function isIsoDateString(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
 }
 
+function dateOnlyToDate(value, endOfDay = false) {
+  const d = new Date(value);
+  if (endOfDay) d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+function formatDateOnly(value) {
+  if (!value) return value;
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function formatAttendanceForClient(row) {
+  const r = row.toObject ? row.toObject() : row;
+  return { ...r, date: formatDateOnly(r.date) };
+}
+
+function dateRangeForDay(day) {
+  return { $gte: dateOnlyToDate(day), $lte: dateOnlyToDate(day, true) };
+}
+
 function existingLunchQuery(userId, day) {
   return {
     userId,
-    date: day,
+    date: dateRangeForDay(day),
     $or: [{ mealType: "lunch" }, { mealType: { $exists: false } }],
   };
 }
 
 function existingDinnerQuery(userId, day) {
-  return { userId, date: day, mealType: "dinner" };
+  return { userId, date: dateRangeForDay(day), mealType: "dinner" };
 }
 
 async function findExistingForMeal(userId, day, mealType) {
@@ -74,11 +99,11 @@ async function create(req, res) {
 
     const row = await Attendance.create({
       userId: req.user._id,
-      date: day,
+      date: dateOnlyToDate(day),
       status,
       mealType,
     });
-    return sendJson(res, 201, true, "Attendance recorded", { attendance: row });
+    return sendJson(res, 201, true, "Attendance recorded", { attendance: formatAttendanceForClient(row) });
   } catch (err) {
     if (err.code === 11000) {
       return sendJson(res, 409, false, "Attendance already exists for this date and meal", null);
@@ -108,7 +133,7 @@ async function getMine(req, res) {
     }
 
     const query = { userId: req.user._id };
-    query.date = { $gte: String(startDate), $lte: String(endDate) };
+    query.date = { $gte: dateOnlyToDate(startDate), $lte: dateOnlyToDate(endDate, true) };
 
     const list = await Attendance.find(query)
       .sort({ date: -1, mealType: 1 })
@@ -119,7 +144,7 @@ async function getMine(req, res) {
       const c = r.cost;
       const cost =
         c == null || c === "" || Number.isNaN(Number(c)) ? null : Number(c);
-      return { ...r, cost };
+      return { ...r, date: formatDateOnly(r.date), cost };
     });
     return sendJson(res, 200, true, "Attendance history retrieved", payload);
   } catch (err) {
@@ -142,7 +167,7 @@ async function update(req, res) {
       return sendJson(res, 404, false, "Attendance not found", null);
     }
     const day = localCalendarDateString();
-    if (doc.date !== day) {
+    if (formatDateOnly(doc.date) !== day) {
       return sendJson(
         res,
         403,
@@ -158,7 +183,7 @@ async function update(req, res) {
     }
     doc.status = status;
     await doc.save();
-    return sendJson(res, 200, true, "Attendance updated", { attendance: doc });
+    return sendJson(res, 200, true, "Attendance updated", { attendance: formatAttendanceForClient(doc) });
   } catch (err) {
     console.error(err);
     return sendJson(res, 500, false, "Internal server error", null);

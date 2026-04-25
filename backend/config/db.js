@@ -11,6 +11,17 @@ const DailyReport = require("../models/DailyReport");
 async function fixAttendanceUniqueIndex() {
   try {
     const coll = mongoose.connection.collection("attendances");
+    const legacyRows = await coll.find({ date: { $type: "string" } }).project({ date: 1 }).toArray();
+    for (const row of legacyRows) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(row.date))) continue;
+      const [year, month, day] = String(row.date).split("-").map(Number);
+      const dateValue = new Date(year, month - 1, day);
+      dateValue.setHours(0, 0, 0, 0);
+      await coll.updateOne({ _id: row._id }, { $set: { date: dateValue } });
+    }
+    if (legacyRows.length > 0) {
+      console.log(`📅 attendance date bootstrap: converted ${legacyRows.length} string date rows`);
+    }
     const indexes = await coll.indexes();
     for (const idx of indexes) {
       if (!idx.key) continue;

@@ -1,5 +1,15 @@
 const { normalizeMealType } = require("./mealHelpers");
 
+function formatDateOnly(value) {
+  if (!value) return value;
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 /**
  * Batches a single Mess.find with $or (one query), attaches `menu` to each row.
  * Safe for empty lists; no aggregation pipeline.
@@ -13,7 +23,7 @@ async function attachMenuToAttendanceRows(Mess, records) {
   }
   const keys = new Map();
   for (const r of records) {
-    const d = r.date;
+    const d = formatDateOnly(r.date);
     if (d == null || d === undefined) continue;
     const mt = normalizeMealType(r.mealType);
     keys.set(`${d}|${mt}`, { date: d, mealType: mt });
@@ -30,7 +40,7 @@ async function attachMenuToAttendanceRows(Mess, records) {
     }
   }
   return records.map((r) => {
-    const d = r.date;
+    const d = formatDateOnly(r.date);
     if (d == null || d === undefined) {
       return { ...r, menu: "—" };
     }
@@ -38,7 +48,7 @@ async function attachMenuToAttendanceRows(Mess, records) {
     const k = `${d}|${mt}`;
     const m = menuByKey.get(k);
     const menu = m == null || m === "" ? "—" : m;
-    return { ...r, menu };
+    return { ...r, date: d, menu };
   });
 }
 

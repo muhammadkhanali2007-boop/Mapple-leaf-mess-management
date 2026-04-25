@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const attendanceSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    date: { type: String, required: true },
+    date: { type: Date, required: true },
     status: { type: String, enum: ["Present", "Absent"], required: true },
     mealType: { type: String, enum: ["lunch", "dinner"], default: "lunch" },
     /** Set when admin finalizes mess cost for this meal; Present = per-head share, Absent = 0 (omit before assign) */
