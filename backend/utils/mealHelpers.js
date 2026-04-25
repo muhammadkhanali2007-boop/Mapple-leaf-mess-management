@@ -1,4 +1,4 @@
-/** Lunch/dinner model helpers — server uses local time like existing app */
+/** Lunch/dinner model helpers — locks use Pakistan local time. */
 
 const LUNCH = "lunch";
 const DINNER = "dinner";
@@ -30,16 +30,24 @@ function finalizedCostMessage(mealType) {
 }
 
 /** 11:00 and later = lunch closed. 17:00 and later = dinner closed. */
+function getPakistanHour() {
+  return Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Karachi",
+      hour: "numeric",
+      hour12: false,
+    }).format(new Date())
+  );
+}
+
 function isLunchTimeLocked() {
   if (process.env.ATTENDANCE_RELAX_TIME === "true") return false;
-  const d = new Date();
-  return d.getHours() >= 11;
+  return getPakistanHour() >= 11;
 }
 
 function isDinnerTimeLocked() {
   if (process.env.ATTENDANCE_RELAX_TIME === "true") return false;
-  const d = new Date();
-  return d.getHours() >= 17;
+  return getPakistanHour() >= 17;
 }
 
 function isMealTimeLocked(mealType) {
