@@ -22,6 +22,10 @@ function localCalendarDateString(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
+function isIsoDateString(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+}
+
 function existingLunchQuery(userId, day) {
   return {
     userId,
@@ -86,8 +90,29 @@ async function create(req, res) {
 
 async function getMine(req, res) {
   try {
-    const list = await Attendance.find({ userId: req.user._id })
+    const startDate = req.query.startDate || req.query.from;
+    const endDate = req.query.endDate || req.query.to;
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 50));
+
+    if (!startDate && !endDate) {
+      return sendJson(res, 200, true, "Attendance history retrieved", []);
+    }
+    if (!startDate || !endDate) {
+      return sendJson(res, 400, false, "Start date and end date are required", null);
+    }
+    if ((startDate && !isIsoDateString(startDate)) || (endDate && !isIsoDateString(endDate))) {
+      return sendJson(res, 400, false, "Dates must be YYYY-MM-DD", null);
+    }
+    if (startDate && endDate && String(endDate) < String(startDate)) {
+      return sendJson(res, 400, false, "End date cannot be before start date", null);
+    }
+
+    const query = { userId: req.user._id };
+    query.date = { $gte: String(startDate), $lte: String(endDate) };
+
+    const list = await Attendance.find(query)
       .sort({ date: -1, mealType: 1 })
+      .limit(limit)
       .lean();
     const withMenu = await attachMenuToAttendanceRows(Mess, list);
     const payload = withMenu.map((r) => {

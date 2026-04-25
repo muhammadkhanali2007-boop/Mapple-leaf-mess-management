@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../services/api";
-import { filterLast30Days, localDateStr } from "../utils/date";
+import { dateDaysAgo, localDateStr } from "../utils/date";
 import {
   groupAttendanceByDate,
   formatHistoryDateHeading,
@@ -51,6 +51,10 @@ function formatShortHistoryDate(iso) {
   });
 }
 
+function formatRangeLabelDate(iso) {
+  return formatShortHistoryDate(iso) || iso;
+}
+
 /** Plain Excel cell from formatEmployeeMealLines; whole-taka amounts as "Rs. 120" */
 function excelEmployeeCostString(line) {
   if (line.cost === "Pending") {
@@ -98,10 +102,15 @@ function isDinnerTimeLocked() {
 export default function Dashboard() {
   const navigate = useNavigate();
   const todayStr = useMemo(() => localDateStr(), []);
-  const [fullName, setFullName] = useState(readStoredFullName);
+  const [fullName] = useState(readStoredFullName);
   const [rows, setRows] = useState([]);
+  const [todayRows, setTodayRows] = useState([]);
   const [loadError, setLoadError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [historyFrom, setHistoryFrom] = useState("");
+  const [historyTo, setHistoryTo] = useState("");
+  const [historyFilter, setHistoryFilter] = useState({ from: "", to: "" });
+  const [historyFilterError, setHistoryFilterError] = useState("");
   const [statusLunch, setStatusLunch] = useState("");
   const [statusDinner, setStatusDinner] = useState("");
   const [idLunch, setIdLunch] = useState(null);
@@ -119,6 +128,7 @@ export default function Dashboard() {
 
   const lunchLocked = isLunchTimeLocked();
   const dinnerLocked = isDinnerTimeLocked();
+  const hasHistoryFilter = !!(historyFilter.from && historyFilter.to);
 
   useEffect(() => {
     const t = setInterval(() => setClock((c) => c + 1), 30000);
@@ -140,12 +150,37 @@ export default function Dashboard() {
     }
   }, []);
 
+  const loadTodayRows = useCallback(async () => {
+    try {
+      const { data } = await api.get("/api/attendance/me", {
+        params: { from: todayStr, to: todayStr, limit: 4 },
+      });
+      if (data.success && Array.isArray(data.data)) {
+        setTodayRows(data.data);
+        const lunchR = data.data.find((r) => mealTypeOfRow(r) === "lunch");
+        const dinnerR = data.data.find((r) => mealTypeOfRow(r) === "dinner");
+        setIdLunch(lunchR?._id ?? null);
+        setStatusLunch(lunchR?.status || "");
+        setIdDinner(dinnerR?._id ?? null);
+        setStatusDinner(dinnerR?.status || "");
+      }
+    } catch {
+      /* history errors are shown by loadHistory */
+    }
+  }, [todayStr]);
+
   /* Logged-in employee’s attendance only — not admin / not global. */
   const loadHistory = useCallback(async () => {
     setLoadError("");
+    if (!historyFilter.from || !historyFilter.to) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const { data } = await api.get("/api/attendance/me");
+      const params = { from: historyFilter.from, to: historyFilter.to, limit: 50 };
+      const { data } = await api.get("/api/attendance/me", { params });
       if (data.success && Array.isArray(data.data)) {
         setRows(data.data);
       } else {
@@ -158,32 +193,19 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [historyFilter]);
 
   useEffect(() => {
-    loadHistory();
-    loadMessBundle();
-  }, [loadHistory, loadMessBundle]);
+    Promise.resolve().then(() => {
+      loadHistory();
+      loadTodayRows();
+      loadMessBundle();
+    });
+  }, [loadHistory, loadMessBundle, loadTodayRows]);
 
   async function refreshAll() {
-    await loadHistory();
-    await loadMessBundle();
+    await Promise.all([loadHistory(), loadTodayRows(), loadMessBundle()]);
   }
-
-  useEffect(() => {
-    const name = readStoredFullName();
-    if (name) setFullName(name);
-  }, []);
-
-  useEffect(() => {
-    const todayRows = rows.filter((r) => r.date === todayStr);
-    const lunchR = todayRows.find((r) => mealTypeOfRow(r) === "lunch");
-    const dinnerR = todayRows.find((r) => mealTypeOfRow(r) === "dinner");
-    setIdLunch(lunchR?._id ?? null);
-    setStatusLunch(lunchR?.status || "");
-    setIdDinner(dinnerR?._id ?? null);
-    setStatusDinner(dinnerR?.status || "");
-  }, [rows, todayStr]);
 
   function logout() {
     localStorage.removeItem("token");
@@ -228,8 +250,7 @@ export default function Dashboard() {
           return;
         }
       }
-      await loadHistory();
-      await loadMessBundle();
+      await Promise.all([loadHistory(), loadTodayRows(), loadMessBundle()]);
     } catch (err) {
       setErr(mapSubmitError(err));
     } finally {
@@ -237,14 +258,61 @@ export default function Dashboard() {
     }
   }
 
-  /** Same source as the history list: /api/attendance/me, last 30 calendar days. */
-  const attendanceHistory = useMemo(() => filterLast30Days(rows), [rows]);
+  /** Same source as the history list: /api/attendance/me, already limited/filtered by the backend. */
+  const attendanceHistory = useMemo(
+    () => [...rows].sort((a, b) => b.date.localeCompare(a.date)),
+    [rows]
+  );
   const historyGrouped = useMemo(() => groupAttendanceByDate(attendanceHistory), [attendanceHistory]);
+
+  const historyRangeText = useMemo(() => {
+    if (historyFilter.from && historyFilter.to) {
+      return `Showing results from ${formatRangeLabelDate(historyFilter.from)} to ${formatRangeLabelDate(historyFilter.to)}`;
+    }
+    return "Select a date range and apply filter to view attendance history";
+  }, [historyFilter]);
+
+  function applyHistoryFilter(nextFrom = historyFrom, nextTo = historyTo) {
+    const from = String(nextFrom || "").trim();
+    const to = String(nextTo || "").trim();
+    if (from && to && to < from) {
+      setHistoryFilterError("End date cannot be before start date");
+      return;
+    }
+    if (!from || !to) {
+      setHistoryFilterError("Select both start date and end date");
+      return;
+    }
+    setHistoryFilterError("");
+    setHistoryFilter({ from, to });
+  }
+
+  function applyQuickHistoryFilter(days) {
+    const to = localDateStr();
+    const from = dateDaysAgo(days - 1);
+    setHistoryFrom(from);
+    setHistoryTo(to);
+    setHistoryFilterError("");
+    setHistoryFilter({ from, to });
+  }
+
+  function clearHistoryFilter() {
+    setHistoryFrom("");
+    setHistoryTo("");
+    setHistoryFilterError("");
+    setRows([]);
+    setLoading(false);
+    setHistoryFilter({ from: "", to: "" });
+  }
 
   const handleDownloadEmployeeExcel = useCallback(async () => {
     // Export ONLY uses attendance from GET /api/attendance/me (this user). Same rows as the UI.
     const data = attendanceHistory;
-    console.log("Excel Data:", data);
+
+    if (!historyFilter.from || !historyFilter.to) {
+      alert("Apply a date filter before downloading Excel");
+      return;
+    }
 
     const grouped = groupAttendanceByDate(data);
     if (grouped.length === 0) {
@@ -254,7 +322,7 @@ export default function Dashboard() {
     try {
       const { default: ExcelJS } = await import("exceljs");
       const wb = new ExcelJS.Workbook();
-      const sheet = wb.addWorksheet("Last 30 days");
+      const sheet = wb.addWorksheet("Attendance History");
 
       const HEADER_BGS = ["FF4FA3BF", "FF8064A2", "FF9BBB59", "FFC0504D", "FF4F81BD"];
       const TITLES = ["Date", "Meal", "Status", "Menu", "Cost"];
@@ -302,22 +370,22 @@ export default function Dashboard() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "attendance_last_30_days.xlsx";
+      a.download = `attendance_${historyFilter.from}_to_${historyFilter.to}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
       console.error("Employee Excel export error:", e);
       alert("Failed to download Excel");
     }
-  }, [attendanceHistory, messBundle.byDate]);
+  }, [attendanceHistory, historyFilter, messBundle.byDate]);
 
   const todayLunchRow = useMemo(
-    () => rows.find((r) => r.date === todayStr && mealTypeOfRow(r) === "lunch"),
-    [rows, todayStr]
+    () => todayRows.find((r) => r.date === todayStr && mealTypeOfRow(r) === "lunch"),
+    [todayRows, todayStr]
   );
   const todayDinnerRow = useMemo(
-    () => rows.find((r) => r.date === todayStr && mealTypeOfRow(r) === "dinner"),
-    [rows, todayStr]
+    () => todayRows.find((r) => r.date === todayStr && mealTypeOfRow(r) === "dinner"),
+    [todayRows, todayStr]
   );
 
   /** Cost from Attendance only (same source as history after assign) */
@@ -462,25 +530,78 @@ export default function Dashboard() {
           }}
         >
           <h2 className="excel-section__title" style={{ marginBottom: 0 }}>
-            Attendance History (last 30 days)
+            Attendance History
           </h2>
           <button
             type="button"
             className="excel-btn excel-btn--outline"
             style={{ flexShrink: 0 }}
             onClick={handleDownloadEmployeeExcel}
-            disabled={loading || !!loadError || historyGrouped.length === 0}
+            disabled={!hasHistoryFilter || loading || !!loadError || historyGrouped.length === 0}
           >
             Download Excel
           </button>
         </div>
-        {loading ? (
+        <form
+          className="attendance-history-filter"
+          onSubmit={(e) => {
+            e.preventDefault();
+            applyHistoryFilter();
+          }}
+        >
+          <label>
+            Start Date
+            <input
+              type="date"
+              className="excel-input"
+              value={historyFrom}
+              onChange={(e) => setHistoryFrom(e.target.value)}
+              max={historyTo || undefined}
+            />
+          </label>
+          <label>
+            End Date
+            <input
+              type="date"
+              className="excel-input"
+              value={historyTo}
+              onChange={(e) => setHistoryTo(e.target.value)}
+              min={historyFrom || undefined}
+            />
+          </label>
+          <button type="submit" className="excel-btn excel-btn--primary" disabled={loading}>
+            Apply Filter
+          </button>
+          <button type="button" className="excel-btn excel-btn--outline" onClick={clearHistoryFilter} disabled={loading}>
+            Clear
+          </button>
+          <div className="attendance-history-filter__quick" aria-label="Quick date filters">
+            <button type="button" className="excel-btn excel-btn--outline" onClick={() => applyQuickHistoryFilter(7)} disabled={loading}>
+              Last 7 days
+            </button>
+            <button type="button" className="excel-btn excel-btn--outline" onClick={() => applyQuickHistoryFilter(15)} disabled={loading}>
+              Last 15 days
+            </button>
+            <button type="button" className="excel-btn excel-btn--outline" onClick={() => applyQuickHistoryFilter(30)} disabled={loading}>
+              Last 30 days
+            </button>
+          </div>
+        </form>
+        {historyFilterError && <p className="excel-msg excel-msg--error">{historyFilterError}</p>}
+        <p className="excel-note" style={{ marginTop: "0.35rem", marginBottom: "0.75rem" }}>
+          {historyRangeText} · Maximum 50 records
+        </p>
+        {!hasHistoryFilter ? (
+          <p className="excel-muted" role="status">
+            No filter applied. Select a date range to view attendance records.
+          </p>
+        ) : loading ? (
           <p className="excel-muted">Loading…</p>
         ) : loadError ? (
           <p className="excel-msg excel-msg--error">{loadError}</p>
         ) : historyGrouped.length === 0 ? (
           <p className="excel-muted" role="status">
-            No attendance recorded
+            No attendance records found
           </p>
         ) : (
           <div className="att-history-list att-history-list--employee">

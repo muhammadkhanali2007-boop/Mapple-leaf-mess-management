@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const User = require("../models/User");
 const Attendance = require("../models/Attendance");
 const Mess = require("../models/Mess");
+const MealTemplate = require("../models/MealTemplate");
 const DailyReport = require("../models/DailyReport");
 const { localDateStr, dateDaysAgoStr } = require("../utils/dateHelpers");
 const { normalizeMealType, finalizedCostMessage } = require("../utils/mealHelpers");
@@ -14,6 +15,10 @@ function sendJson(res, status, success, message, data = null) {
 function mealTypeFromRequest(req) {
   const m = req.query?.mealType ?? req.body?.mealType;
   return normalizeMealType(m);
+}
+
+function normalizeTemplateName(name) {
+  return String(name || "").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 function recordMatchesMeal(a, mealType) {
@@ -224,6 +229,105 @@ function formatIngredientForClient(i) {
   };
 }
 
+function ingredientLineTotal(i) {
+  const n = normalizeIngredientForSave(i);
+  return n ? Number(n.price) || 0 : 0;
+}
+
+function templateIngredientForClient(i) {
+  if (!i) return null;
+  const name = String(i.name || "").trim();
+  if (!name) return null;
+  const quantity = String(i.quantity ?? "").trim();
+  const qtyNum = parseFloat(quantity.replace(/[^\d.-]/g, "")) || 0;
+  const unitPrice = Number(i.unitPrice) || 0;
+  const total = Math.round(qtyNum * unitPrice * 100) / 100;
+  return {
+    name,
+    quantity,
+    quantityKg: qtyNum,
+    unitPrice,
+    pricePerKg: unitPrice,
+    total,
+  };
+}
+
+function formatTemplateForClient(template) {
+  if (!template) return null;
+  const t = template.toObject ? template.toObject() : template;
+  return {
+    _id: t._id,
+    name: t.name,
+    version: t.version,
+    versionLabel: `v${t.version || 1}`,
+    createdAt: t.createdAt,
+    ingredients: (t.ingredients || []).map(templateIngredientForClient).filter(Boolean),
+  };
+}
+
+function ingredientsForTemplate(ingredients) {
+  return (ingredients || [])
+    .map(normalizeIngredientForSave)
+    .filter(Boolean)
+    .map((i) => {
+      const quantity = String(i.quantity ?? "").trim();
+      const qtyNum = parseFloat(quantity.replace(/[^\d.-]/g, "")) || 0;
+      const unitPrice = qtyNum > 0 ? Math.round(((Number(i.price) || 0) / qtyNum) * 100) / 100 : 0;
+      return { name: i.name, quantity, unitPrice };
+    });
+}
+
+function ingredientsFromTemplate(templateIngredients) {
+  return (templateIngredients || [])
+    .map((i) => templateIngredientForClient(i))
+    .filter(Boolean)
+    .map((i) => ({
+      name: i.name,
+      quantity: i.quantity,
+      price: i.total,
+    }));
+}
+
+function templateIngredientsForCompare(ingredients) {
+  return (ingredients || [])
+    .map((i) => ({
+      name: String(i.name || "").trim(),
+      quantity: String(i.quantity ?? "").trim(),
+      unitPrice: Math.round((Number(i.unitPrice) || 0) * 100) / 100,
+    }))
+    .filter((i) => i.name);
+}
+
+function templateIngredientsEqual(a, b) {
+  return JSON.stringify(templateIngredientsForCompare(a)) === JSON.stringify(templateIngredientsForCompare(b));
+}
+
+async function findLatestMealTemplate(messName) {
+  const normalizedName = normalizeTemplateName(messName);
+  if (!normalizedName) return null;
+  return MealTemplate.findOne({ normalizedName }).sort({ version: -1, createdAt: -1 });
+}
+
+async function ensureMealTemplate(messName, ingredients) {
+  const name = String(messName || "").trim();
+  const normalizedName = normalizeTemplateName(name);
+  const templateIngredients = ingredientsForTemplate(ingredients);
+  if (!name || templateIngredients.length === 0) return null;
+
+  const latest = await findLatestMealTemplate(name);
+  if (latest && templateIngredientsEqual(templateIngredients, latest.ingredients || [])) {
+    return latest;
+  }
+
+  const version = latest ? (Number(latest.version) || 1) + 1 : 1;
+  return MealTemplate.create({
+    name,
+    normalizedName,
+    ingredients: templateIngredients,
+    version,
+  });
+}
+
 function formatMessForClient(mess) {
   if (!mess) return null;
   const m = mess.toObject ? mess.toObject() : mess;
@@ -249,10 +353,72 @@ async function patchMessMenu(req, res) {
     const messName = String(req.body.messName ?? "").trim();
     const doc = await Mess.findOneAndUpdate(
       messKey(today, mealType),
-      { $set: { messName, mealType: normalizeMealType(mealType) } },
+      { $set: { messName, mealType: normalizeMealType(mealType), templateId: null } },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
     return sendJson(res, 200, true, "OK", { mess: formatMessForClient(doc) });
+  } catch (err) {
+    console.error(err);
+    return sendJson(res, 500, false, "Internal server error", null);
+  }
+}
+
+async function getMealTemplateSuggestion(req, res) {
+  try {
+    const messName = req.query?.messName ?? req.query?.name;
+    const template = await findLatestMealTemplate(messName);
+    return sendJson(res, 200, true, "OK", {
+      template: formatTemplateForClient(template),
+    });
+  } catch (err) {
+    console.error(err);
+    return sendJson(res, 500, false, "Internal server error", null);
+  }
+}
+
+async function applyMealTemplateToToday(req, res) {
+  try {
+    const mealType = mealTypeFromRequest(req);
+    if (await todayMessIsFinalizedFor(mealType)) {
+      return sendJson(res, 400, false, finalizedCostMessage(mealType), null);
+    }
+
+    const { templateId } = req.body || {};
+    if (!mongoose.Types.ObjectId.isValid(templateId)) {
+      return sendJson(res, 400, false, "Invalid template id", null);
+    }
+
+    const template = await MealTemplate.findById(templateId);
+    if (!template) {
+      return sendJson(res, 404, false, "Meal template not found", null);
+    }
+
+    const today = localDateStr();
+    const ingredients = ingredientsFromTemplate(template.ingredients);
+    const doc = await Mess.findOneAndUpdate(
+      messKey(today, mealType),
+      {
+        $set: {
+          date: today,
+          mealType: normalizeMealType(mealType),
+          templateId: template._id,
+          messName: template.name,
+          ingredients,
+          finalIngredientsSnapshot: [],
+          totalCost: 0,
+          totalExpense: 0,
+          costPerHead: 0,
+          assigned: false,
+          presentCountAtAssign: 0,
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    return sendJson(res, 200, true, "Previous recipe applied", {
+      mess: formatMessForClient(doc),
+      template: formatTemplateForClient(template),
+    });
   } catch (err) {
     console.error(err);
     return sendJson(res, 500, false, "Internal server error", null);
@@ -281,20 +447,18 @@ async function addMessIngredient(req, res) {
     const existing = await Mess.findOne(key).lean();
     const prev = (existing?.ingredients || []).map(normalizeIngredientForSave).filter(Boolean);
     const ingredients = [...prev, { name: nameTrim, quantity: String(qty), price: linePrice }];
-    const present = await presentCountForDateAndMeal(today, mealType);
-    const totalCost = ingredients.reduce((s, x) => s + (Number(x.price) || 0), 0);
-    const costPerHead = present > 0 ? Math.round((totalCost / present) * 100) / 100 : 0;
     const doc = await Mess.findOneAndUpdate(
       key,
       {
         $set: {
           date: today,
           mealType: normalizeMealType(mealType),
+          templateId: null,
           messName: existing?.messName ?? "",
           ingredients,
-          totalCost,
-          totalExpense: totalCost,
-          costPerHead,
+          totalCost: 0,
+          totalExpense: 0,
+          costPerHead: 0,
           assigned: false,
           presentCountAtAssign: 0,
         },
@@ -342,17 +506,15 @@ async function updateMessIngredient(req, res) {
       quantity: String(qty),
       price: Math.round(qty * ppk * 100) / 100,
     };
-    const present = await presentCountForDateAndMeal(today, mealType);
-    const totalCost = ingredients.reduce((s, x) => s + (Number(x.price) || 0), 0);
-    const costPerHead = present > 0 ? Math.round((totalCost / present) * 100) / 100 : 0;
     const doc = await Mess.findOneAndUpdate(
       key,
       {
         $set: {
+          templateId: null,
           ingredients,
-          totalCost,
-          totalExpense: totalCost,
-          costPerHead,
+          totalCost: 0,
+          totalExpense: 0,
+          costPerHead: 0,
           assigned: false,
           presentCountAtAssign: 0,
         },
@@ -386,17 +548,15 @@ async function deleteMessIngredient(req, res) {
       .map(normalizeIngredientForSave)
       .filter(Boolean)
       .filter((x) => String(x._id) !== ingredientId);
-    const present = await presentCountForDateAndMeal(today, mealType);
-    const totalCost = ingredients.reduce((s, x) => s + (Number(x.price) || 0), 0);
-    const costPerHead = present > 0 ? Math.round((totalCost / present) * 100) / 100 : 0;
     const doc = await Mess.findOneAndUpdate(
       key,
       {
         $set: {
+          templateId: null,
           ingredients,
-          totalCost,
-          totalExpense: totalCost,
-          costPerHead,
+          totalCost: 0,
+          totalExpense: 0,
+          costPerHead: 0,
           assigned: false,
           presentCountAtAssign: 0,
         },
@@ -430,7 +590,8 @@ async function assignCost(req, res) {
     if (!mess) {
       return sendJson(res, 400, false, "No mess data for today. Add ingredients first.", null);
     }
-    const base = mess.totalCost ?? mess.totalExpense ?? 0;
+    const finalSnapshot = (mess.ingredients || []).map(normalizeIngredientForSave).filter(Boolean);
+    const base = Math.round(finalSnapshot.reduce((sum, i) => sum + ingredientLineTotal(i), 0) * 100) / 100;
     if (base <= 0) {
       return sendJson(res, 400, false, "No ingredients / total cost is zero", null);
     }
@@ -470,12 +631,16 @@ async function assignCost(req, res) {
     }
 
     mess.costPerHead = costPerHead;
+    mess.totalCost = base;
+    mess.totalExpense = base;
+    mess.finalIngredientsSnapshot = finalSnapshot;
     mess.presentCountAtAssign = presentCount;
     mess.assigned = true;
     mess.isFinalized = true;
+    const template = await ensureMealTemplate(mess.messName, finalSnapshot);
+    if (template) mess.templateId = template._id;
     await mess.save();
 
-    const totalExpense = mess.totalCost ?? mess.totalExpense ?? base;
     await DailyReport.findOneAndUpdate(
       { date: today, mealType: mt },
       {
@@ -483,7 +648,7 @@ async function assignCost(req, res) {
           date: today,
           mealType: mt,
           menu: mess.messName || "",
-          totalExpense,
+          totalExpense: base,
           presentCount,
           costPerHead,
         },
@@ -548,6 +713,8 @@ module.exports = {
   getEmployees,
   getTodayMess,
   patchMessMenu,
+  getMealTemplateSuggestion,
+  applyMealTemplateToToday,
   addMessIngredient,
   updateMessIngredient,
   deleteMessIngredient,

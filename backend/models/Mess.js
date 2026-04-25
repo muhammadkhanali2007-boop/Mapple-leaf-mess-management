@@ -14,8 +14,10 @@ const messSchema = new mongoose.Schema(
   {
     date: { type: String, required: true },
     mealType: { type: String, enum: ["lunch", "dinner"], default: "lunch" },
+    templateId: { type: mongoose.Schema.Types.ObjectId, ref: "MealTemplate", default: null },
     messName: { type: String, default: "", trim: true },
     ingredients: { type: [ingredientSchema], default: [] },
+    finalIngredientsSnapshot: { type: [ingredientSchema], default: [] },
     totalCost: { type: Number, default: 0, min: 0 },
     totalExpense: { type: Number, default: 0, min: 0 },
     costPerHead: { type: Number, default: 0, min: 0 },

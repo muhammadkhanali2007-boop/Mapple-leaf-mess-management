@@ -5,6 +5,8 @@ const {
   getEmployees,
   getTodayMess,
   patchMessMenu,
+  getMealTemplateSuggestion,
+  applyMealTemplateToToday,
   addMessIngredient,
   updateMessIngredient,
   deleteMessIngredient,
@@ -30,6 +32,8 @@ router.delete("/employee-data/:employeeId", verifyAdmin, deleteEmployeeData);
 router.get("/attendance/history/:employeeId", verifyAdmin, getEmployeeAttendanceHistory);
 router.get("/attendance/today", verifyAdmin, getTodayAttendance);
 router.get("/employees", verifyAdmin, getEmployees);
+router.get("/mess/templates/suggest", verifyAdmin, getMealTemplateSuggestion);
+router.post("/mess/today/use-template", verifyAdmin, applyMealTemplateToToday);
 router.get("/mess/today", verifyAdmin, getTodayMess);
 router.patch("/mess/today/menu", verifyAdmin, patchMessMenu);
 router.post("/mess/today/ingredients", verifyAdmin, addMessIngredient);

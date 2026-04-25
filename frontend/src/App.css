@@ -320,6 +320,31 @@ body {
   line-height: 1.35;
 }
 
+.admin-section-title--mess-highlight {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 220px;
+  padding: 0.58rem 1rem;
+  border: 1px solid #bfe4ce;
+  border-radius: 12px;
+  background: #eaf7ef;
+  color: #0c532b;
+  font-family: var(--ml-font-body);
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  box-shadow: 0 6px 18px rgba(12, 83, 43, 0.08);
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.admin-section-title--mess-highlight:hover {
+  background: #dff1e6;
+  border-color: #aad9be;
+  box-shadow: 0 8px 22px rgba(12, 83, 43, 0.12);
+}
+
 /* Stat cards */
 .admin-summary {
   margin-top: 0.5rem;
@@ -450,6 +475,33 @@ body {
   padding-left: 0.5rem;
   border-left: 3px solid var(--ml-primary);
   line-height: 1.35;
+}
+
+.attendance-history-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.65rem;
+  padding: 0.85rem;
+  border: 1px solid var(--ml-border);
+  border-radius: 12px;
+  background: var(--ml-surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.attendance-history-filter label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--ml-text);
+}
+
+.attendance-history-filter__quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
 }
 
 .excel-table-wrap {
@@ -825,6 +877,33 @@ body {
 .admin-mess-input {
   flex: 1;
   min-width: 200px;
+}
+
+.meal-template-suggestion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: -0.25rem 0 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #bfe4ce;
+  border-radius: 12px;
+  background: #eaf7ef;
+  color: #0c532b;
+  box-shadow: 0 6px 18px rgba(12, 83, 43, 0.08);
+}
+
+.meal-template-suggestion strong {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.meal-template-suggestion p {
+  margin: 0.25rem 0 0;
+  font-size: 0.84rem;
+  color: #34664a;
 }
 
 .admin-ing-add {

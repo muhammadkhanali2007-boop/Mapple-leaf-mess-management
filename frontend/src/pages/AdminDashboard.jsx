@@ -139,6 +139,9 @@ export default function AdminDashboard({ hidePanelLogout = false }) {
   const [messMsg, setMessMsg] = useState("");
   const [messErr, setMessErr] = useState("");
   const [messSyncing, setMessSyncing] = useState(false);
+  const [recipeSuggestion, setRecipeSuggestion] = useState(null);
+  const [recipeLookupLoading, setRecipeLookupLoading] = useState(false);
+  const [recipeLookupErr, setRecipeLookupErr] = useState("");
   /** Server flag: true after "Assign cost" (locks mess edits) */
   const [messIsFinalized, setMessIsFinalized] = useState(false);
   const [assignErr, setAssignErr] = useState("");
@@ -369,6 +372,57 @@ export default function AdminDashboard({ hidePanelLogout = false }) {
     );
   }
 
+  async function checkRecipeSuggestion(nameArg = messName) {
+    const name = String(nameArg || "").trim();
+    setRecipeLookupErr("");
+    if (!name || messIsFinalized) {
+      setRecipeSuggestion(null);
+      return;
+    }
+
+    setRecipeLookupLoading(true);
+    try {
+      const { data } = await adminApi.get("/api/admin/mess/templates/suggest", {
+        params: { messName: name },
+      });
+      if (data.success && data.data?.template) {
+        setRecipeSuggestion(data.data.template);
+      } else {
+        setRecipeSuggestion(null);
+      }
+    } catch (e) {
+      setRecipeSuggestion(null);
+      setRecipeLookupErr(e.response?.data?.message || "Could not check previous recipes");
+    } finally {
+      setRecipeLookupLoading(false);
+    }
+  }
+
+  async function usePreviousRecipe() {
+    if (!recipeSuggestion?._id) return;
+    setMessErr("");
+    setMessMsg("");
+    setMessSyncing(true);
+    try {
+      const mealType = mealSection === "dinner" ? "dinner" : "lunch";
+      const { data } = await adminApi.post("/api/admin/mess/today/use-template", {
+        templateId: recipeSuggestion._id,
+        mealType,
+      });
+      if (data.success && data.data?.mess) {
+        applyMessFromResponse(data.data.mess);
+        setRecipeSuggestion(null);
+        setMessMsg("Previous recipe loaded. You can edit it before assigning cost.");
+      } else {
+        setMessErr(data.message || "Could not use previous recipe");
+      }
+    } catch (e) {
+      setMessErr(e.response?.data?.message || "Could not use previous recipe");
+    } finally {
+      setMessSyncing(false);
+    }
+  }
+
   const loadTodayMess = useCallback(async () => {
     try {
       const mt = mealSection === "dinner" ? "dinner" : "lunch";
@@ -377,10 +431,14 @@ export default function AdminDashboard({ hidePanelLogout = false }) {
       });
       if (data.success && data.data?.mess) {
         applyMessFromResponse(data.data.mess);
+        setRecipeSuggestion(null);
+        setRecipeLookupErr("");
       } else {
         setMessName("");
         setIngredients([]);
         setMessIsFinalized(false);
+        setRecipeSuggestion(null);
+        setRecipeLookupErr("");
       }
     } catch {
       /* empty */
@@ -519,9 +577,15 @@ export default function AdminDashboard({ hidePanelLogout = false }) {
   async function saveMessMenu() {
     try {
       const mealType = mealSection === "dinner" ? "dinner" : "lunch";
-      await adminApi.patch("/api/admin/mess/today/menu", { messName, mealType });
-    } catch {
-      /* optional */
+      const name = messName.trim();
+      const { data } = await adminApi.patch("/api/admin/mess/today/menu", { messName: name, mealType });
+      if (data.success && data.data?.mess) {
+        applyMessFromResponse(data.data.mess);
+      }
+      await checkRecipeSuggestion(name);
+    } catch (e) {
+      setRecipeSuggestion(null);
+      setRecipeLookupErr(e.response?.data?.message || "Could not save menu");
     }
   }
 
@@ -927,7 +991,7 @@ export default function AdminDashboard({ hidePanelLogout = false }) {
               marginBottom: "0.75rem",
             }}
           >
-            <h2 className="admin-section-title" style={{ margin: 0 }}>
+            <h2 className="admin-section-title admin-section-title--mess-highlight" style={{ margin: 0 }}>
               {mealSection === "dinner" ? "Dinner Mess Management" : "Lunch Mess Management"}
             </h2>
             <button
@@ -936,6 +1000,8 @@ export default function AdminDashboard({ hidePanelLogout = false }) {
               onClick={() => {
                 setMessMsg("");
                 setAssignErr("");
+                setRecipeSuggestion(null);
+                setRecipeLookupErr("");
                 setMealSection((m) => (m === "lunch" ? "dinner" : "lunch"));
               }}
             >
@@ -954,7 +1020,11 @@ export default function AdminDashboard({ hidePanelLogout = false }) {
               className="excel-input admin-mess-input"
               placeholder="e.g. Mutton + Rice"
               value={messName}
-              onChange={(e) => setMessName(e.target.value)}
+              onChange={(e) => {
+                setMessName(e.target.value);
+                setRecipeSuggestion(null);
+                setRecipeLookupErr("");
+              }}
               onBlur={saveMessMenu}
               disabled={messInputsDisabled}
             />
@@ -962,6 +1032,29 @@ export default function AdminDashboard({ hidePanelLogout = false }) {
               Menu name saves when you leave this field
             </span>
           </div>
+          {recipeLookupLoading && <p className="excel-note">Checking previous recipes…</p>}
+          {recipeLookupErr && <p className="excel-msg excel-msg--error">{recipeLookupErr}</p>}
+          {recipeSuggestion && !messInputsDisabled && (
+            <div className="meal-template-suggestion" role="status">
+              <div>
+                <strong>
+                  Previous recipe found for {recipeSuggestion.name} ({recipeSuggestion.versionLabel || "v1"}). Use it?
+                </strong>
+                <p>
+                  {recipeSuggestion.ingredients?.length || 0} ingredient
+                  {(recipeSuggestion.ingredients?.length || 0) === 1 ? "" : "s"} will be loaded for review.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="excel-btn excel-btn--primary"
+                onClick={usePreviousRecipe}
+                disabled={messInputsDisabled || messSyncing}
+              >
+                Use Previous Recipe
+              </button>
+            </div>
+          )}
 
           <h2 className="admin-section-title">
             Step 2 — Ingredients ({mealSection === "dinner" ? "Dinner" : "Lunch"})
