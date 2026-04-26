@@ -47,7 +47,7 @@ function buildMealView(list, allEmployees, today, mealType) {
       present.push({
         employeeName: name,
         time,
-        employeeId: uid,
+        employeeId: a.userId?.employeeId || uid,
         date: today,
         mealType: mt,
       });
@@ -78,7 +78,7 @@ function buildMealView(list, allEmployees, today, mealType) {
     absent.push({
       employeeName: n,
       time,
-      employeeId: uid,
+      employeeId: emp.employeeId || uid,
       date: today,
       mealType: mt,
     });
@@ -115,9 +115,9 @@ async function presentCountForDateAndMeal(dateStr, mealType) {
 async function getTodayAttendance(req, res) {
   try {
     const today = localDateStr();
-    const list = await Attendance.find({ date: today }).populate("userId", "fullName username").lean();
+    const list = await Attendance.find({ date: today }).populate("userId", "fullName username employeeId").lean();
     const totalEmployees = await User.countDocuments({ role: "employee" });
-    const employees = await User.find({ role: "employee" }).select("_id fullName username").lean();
+    const employees = await User.find({ role: "employee" }).select("_id fullName username employeeId").lean();
 
     const lunch = buildMealView(list, employees, today, "lunch");
     const dinner = buildMealView(list, employees, today, "dinner");
@@ -179,7 +179,7 @@ async function getEmployeeAttendanceHistory(req, res) {
 async function getEmployees(req, res) {
   try {
     const total = await User.countDocuments({ role: "employee" });
-    const employees = await User.find({ role: "employee" }).select("fullName username").lean();
+    const employees = await User.find({ role: "employee" }).select("fullName username employeeId").lean();
     return sendJson(res, 200, true, "OK", { total, employees });
   } catch (err) {
     console.error(err);

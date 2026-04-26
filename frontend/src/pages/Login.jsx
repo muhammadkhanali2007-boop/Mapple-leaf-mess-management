@@ -23,14 +23,6 @@ export default function Login() {
     }
   }, [navigate]);
 
-  useEffect(() => {
-    if (adminMode) {
-      setUsername("admin");
-    } else {
-      setUsername("");
-    }
-  }, [adminMode]);
-
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
@@ -45,7 +37,7 @@ export default function Login() {
         if (data.data.user) {
           localStorage.setItem("user", JSON.stringify(data.data.user));
         }
-        const role = getStoredRole();
+        const role = data.data.user?.role || getStoredRole();
         if (role === "admin") {
           navigate("/admin", { replace: true });
         } else {
@@ -98,7 +90,11 @@ export default function Login() {
             <button
               type="button"
               className="login-mode-btn"
-              onClick={() => setAdminMode((m) => !m)}
+              onClick={() => {
+                const next = !adminMode;
+                setAdminMode(next);
+                setUsername(next ? "admin" : "");
+              }}
             >
               {adminMode ? "Login as Employee" : "Login as Admin"}
             </button>

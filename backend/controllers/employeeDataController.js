@@ -21,24 +21,26 @@ async function listEmployeeData(req, res) {
     console.log("EMPLOYEE DATA API HIT");
     const { today, fromDate } = last30DayRange();
     const users = await User.find({ role: "employee" })
-      .select("fullName username createdAt")
+      .select("fullName employeeId username createdAt")
       .sort({ username: 1 })
       .lean();
 
     const rows = [];
     for (const u of users) {
-      const employeeId = String(u._id);
+      const id = String(u._id);
       const totalAttendance30Days = await Attendance.countDocuments({
         userId: u._id,
         date: { $gte: fromDate, $lte: today },
       });
       rows.push({
-        employeeId,
+        id,
+        employeeId: u.employeeId || "",
         name: u.fullName,
         username: u.username,
         createdAt: u.createdAt,
         totalAttendance30Days,
       });
+      console.log("Sending employeeId:", u.employeeId || "");
     }
 
     return sendJson(res, 200, true, "OK", { employees: rows });
@@ -122,7 +124,8 @@ async function updateEmployeeData(req, res) {
 
     return sendJson(res, 200, true, "Employee updated", {
       employee: {
-        employeeId: String(user._id),
+        id: String(user._id),
+        employeeId: user.employeeId || "",
         name: user.fullName,
         username: user.username,
         createdAt: user.createdAt,

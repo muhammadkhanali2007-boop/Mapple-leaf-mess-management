@@ -5,6 +5,9 @@ import api from "../services/api";
 function mapSignupError(err) {
   const status = err.response?.status;
   const msg = err.response?.data?.message || "";
+  if (status === 409 && /employee id/i.test(msg)) {
+    return "Employee ID already exists";
+  }
   if (status === 409 || /already taken|duplicate|exists/i.test(msg)) {
     return "Username already exists";
   }
@@ -13,6 +16,7 @@ function mapSignupError(err) {
 
 export default function Signup() {
   const [fullName, setFullName] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -35,8 +39,10 @@ export default function Signup() {
     }
     setLoading(true);
     try {
+      console.log("Sending employeeId:", employeeId);
       const { data } = await api.post("/api/auth/signup", {
         fullName,
+        employeeId,
         username,
         password,
       });
@@ -66,6 +72,17 @@ export default function Signup() {
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               autoComplete="name"
+              required
+            />
+          </label>
+          <label className="excel-label">
+            Employee ID
+            <input
+              className="excel-input"
+              type="text"
+              value={employeeId}
+              onChange={(e) => setEmployeeId(e.target.value)}
+              autoComplete="off"
               required
             />
           </label>

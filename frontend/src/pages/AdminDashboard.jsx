@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, Fragment } from "react";
 import { useNavigate } from "react-router-dom";
 import adminApi from "../services/adminApi";
+import mapleLeafLogo from "../assets/maple-leaf-logo.png";
 import { localDateStr } from "../utils/date";
 import {
   groupAttendanceByDate,
@@ -313,7 +314,7 @@ export default function AdminDashboard({ hidePanelLogout = false }) {
   const openEmpEdit = useCallback((row) => {
     setEmpEditModal({
       open: true,
-      employeeId: row.employeeId,
+      employeeId: row.id,
       name: row.name || "",
       username: row.username || "",
       saving: false,
@@ -841,7 +842,8 @@ export default function AdminDashboard({ hidePanelLogout = false }) {
     <div className="admin-app">
       <header className="admin-nav-bar">
         <div className="admin-nav-bar__brand">
-          <h1 className="admin-brand">Mess Management — Admin Panel</h1>
+          <img className="admin-brand__logo" src={mapleLeafLogo} alt="Maple Leaf Cement Factory Limited" />
+          <h1 className="admin-brand">Maple Leaf Mess Management</h1>
         </div>
         <nav className="admin-nav-bar__tabs" aria-label="Admin sections">
           <button
@@ -1528,6 +1530,7 @@ export default function AdminDashboard({ hidePanelLogout = false }) {
                 <tr>
                   <th>Name</th>
                   <th>Username</th>
+                  <th>Employee ID</th>
                   <th>Created</th>
                   <th>Total attendance (30 days)</th>
                   <th>Actions</th>
@@ -1536,27 +1539,28 @@ export default function AdminDashboard({ hidePanelLogout = false }) {
               <tbody>
                 {employeeDataLoading ? (
                   <tr>
-                    <td colSpan={5} className="excel-cell-muted">
+                    <td colSpan={6} className="excel-cell-muted">
                       Loading…
                     </td>
                   </tr>
                 ) : employeeRows.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="excel-cell-muted">
+                    <td colSpan={6} className="excel-cell-muted">
                       No employees
                     </td>
                   </tr>
                 ) : filteredEmployeeRows.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="excel-cell-muted">
+                    <td colSpan={6} className="excel-cell-muted">
                       No employees match this search
                     </td>
                   </tr>
                 ) : (
                   filteredEmployeeRows.map((row) => (
-                    <tr key={row.employeeId}>
+                    <tr key={row.id}>
                       <td>{row.name}</td>
                       <td>{row.username}</td>
+                      <td>{row.employeeId || "—"}</td>
                       <td>
                         {row.createdAt
                           ? new Date(row.createdAt).toISOString().slice(0, 10)
@@ -1569,7 +1573,7 @@ export default function AdminDashboard({ hidePanelLogout = false }) {
                             type="button"
                             className="excel-btn excel-btn--outline"
                             style={{ padding: "0.2rem 0.45rem", fontSize: "0.8rem" }}
-                            onClick={() => openEmpHistory(row.employeeId, row.name)}
+                            onClick={() => openEmpHistory(row.id, row.name)}
                           >
                             View History
                           </button>
@@ -1585,7 +1589,7 @@ export default function AdminDashboard({ hidePanelLogout = false }) {
                             type="button"
                             className="excel-btn excel-btn--outline"
                             style={{ padding: "0.2rem 0.45rem", fontSize: "0.8rem" }}
-                            onClick={() => setDeleteTarget({ employeeId: row.employeeId, name: row.name })}
+                            onClick={() => setDeleteTarget({ employeeId: row.id, name: row.name })}
                           >
                             Delete
                           </button>

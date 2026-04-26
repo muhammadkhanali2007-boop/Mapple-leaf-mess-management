@@ -28,6 +28,7 @@ async function ensureAdminUser() {
 
     await User.create({
       fullName: "Administrator",
+      employeeId: "admin",
       username: "admin",
       password: hashed,
       role: "admin",

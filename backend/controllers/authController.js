@@ -21,17 +21,26 @@ function signToken(user) {
 
 async function signup(req, res) {
   try {
-    const { fullName, username, password } = req.body;
-    if (!fullName || !username || !password) {
-      return sendJson(res, 400, false, "fullName, username, and password are required", null);
+    const { name, fullName, employeeId, username, password } = req.body;
+    const displayName = fullName ?? name;
+    const employeeIdTrim = String(employeeId || "").trim();
+    console.log("Received employeeId:", employeeId);
+    console.log("Saving employeeId:", employeeIdTrim);
+    if (!displayName || !employeeIdTrim || !username || !password) {
+      return sendJson(res, 400, false, "fullName, employeeId, username, and password are required", null);
     }
     const existing = await User.findOne({ username: String(username).toLowerCase().trim() });
     if (existing) {
       return sendJson(res, 409, false, "Username already taken", null);
     }
+    const existingEmployeeId = await User.findOne({ employeeId: employeeIdTrim });
+    if (existingEmployeeId) {
+      return sendJson(res, 409, false, "Employee ID already taken", null);
+    }
     const hashed = await bcrypt.hash(password, 12);
     const user = await User.create({
-      fullName: String(fullName).trim(),
+      fullName: String(displayName).trim(),
+      employeeId: employeeIdTrim,
       username: String(username).toLowerCase().trim(),
       password: hashed,
       role: "employee",
@@ -39,11 +48,15 @@ async function signup(req, res) {
     return sendJson(res, 201, true, "User created successfully", {
       id: user._id,
       fullName: user.fullName,
+      employeeId: user.employeeId,
       username: user.username,
       role: user.role,
     });
   } catch (err) {
     if (err.code === 11000) {
+      if (err.keyPattern?.employeeId) {
+        return sendJson(res, 409, false, "Employee ID already taken", null);
+      }
       return sendJson(res, 409, false, "Username already taken", null);
     }
     console.error(err);
