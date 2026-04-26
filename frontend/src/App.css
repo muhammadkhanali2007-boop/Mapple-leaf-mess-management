@@ -27,6 +27,14 @@ body {
   color: var(--ml-text);
   background: var(--ml-bg);
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
 }
 
 /* ------------------------------------------------------------------ */
@@ -348,6 +356,9 @@ body {
 
 /* Stat cards */
 .admin-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.85rem;
   margin-top: 0.5rem;
   margin-bottom: 1rem;
 }
@@ -507,14 +518,17 @@ body {
 
 .excel-table-wrap {
   overflow-x: auto;
+  max-width: 100%;
   border: 1px solid var(--ml-border);
   background: var(--ml-surface);
   border-radius: 12px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  -webkit-overflow-scrolling: touch;
 }
 
 .excel-table {
   width: 100%;
+  min-width: 620px;
   border-collapse: collapse;
   font-size: 0.92rem;
   font-family: var(--ml-font-body);
@@ -578,6 +592,7 @@ body {
 
 .excel-select {
   font-family: var(--ml-font-body);
+  min-height: 44px;
   padding: 0.35rem 0.5rem;
   border: 1px solid var(--ml-border);
   background: var(--ml-surface);
@@ -594,6 +609,7 @@ body {
 .excel-btn {
   font-family: var(--ml-font-body);
   cursor: pointer;
+  min-height: 44px;
   padding: 0.45rem 0.95rem;
   border-radius: 8px;
   border: 1px solid var(--ml-border);
@@ -621,7 +637,8 @@ body {
 }
 
 .excel-btn--sm {
-  padding: 0.28rem 0.7rem;
+  min-height: 36px;
+  padding: 0.38rem 0.75rem;
   font-size: 0.85rem;
   border-radius: 999px;
 }
@@ -649,6 +666,8 @@ body {
 
 .excel-input {
   font-family: var(--ml-font-body);
+  min-height: 44px;
+  max-width: 100%;
   padding: 0.45rem 0.6rem;
   border: 1px solid var(--ml-border);
   background: var(--ml-surface);
@@ -1004,8 +1023,8 @@ body {
   color: var(--ml-text);
 }
 
-/* Total attendance (30 days) — column 4 after removing Employee ID */
-.admin-employee-data .excel-table td:nth-child(4) {
+/* Total attendance (30 days) */
+.admin-employee-data .excel-table td:nth-child(5) {
   font-weight: 600;
   text-align: center;
   font-family: var(--ml-font-mono);
@@ -1015,7 +1034,7 @@ body {
   border-radius: 4px;
 }
 
-.admin-employee-data .excel-table tbody tr:hover td:nth-child(4) {
+.admin-employee-data .excel-table tbody tr:hover td:nth-child(5) {
   background: #f5ebd4 !important;
 }
 
@@ -1064,8 +1083,16 @@ body {
 }
 
 .admin-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
   background: rgba(20, 25, 22, 0.4);
   backdrop-filter: blur(2px);
+  box-sizing: border-box;
 }
 
 .admin-modal {
@@ -1115,17 +1142,32 @@ body {
     width: 100%;
     height: auto;
     min-height: 0;
+    padding: 0.75rem;
     box-shadow: none;
     border-right: none;
+  }
+
+  .admin-nav-bar__brand {
+    padding: 0 0 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .admin-brand__logo {
+    width: min(130px, 42vw);
   }
 
   .admin-nav-bar__tabs {
     flex-direction: row;
     flex-wrap: wrap;
+    gap: 0.45rem;
+    padding: 0.55rem 0;
   }
 
   .admin-tab {
+    flex: 1 1 10rem;
     width: auto;
+    min-height: 44px;
+    text-align: center;
   }
 
   .admin-nav-bar__right {
@@ -1145,15 +1187,60 @@ body {
     flex: 1 1 auto;
   }
 
+  .admin-app {
+    padding: 0 1rem 1.25rem;
+  }
+
+  .admin-page-intro {
+    padding: 0.65rem 1rem;
+  }
+
   .admin-split {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 640px) {
+  .excel-app {
+    width: 100%;
+    padding: 0 0.85rem 1.5rem;
+  }
+
+  .excel-auth--center {
+    align-items: flex-start;
+    padding: 1rem 0.85rem;
+  }
+
+  .excel-card {
+    padding: 1.2rem;
+    border-radius: 10px;
+  }
+
+  .excel-card__title,
+  .excel-welcome {
+    font-size: 1.35rem;
+  }
+
   .excel-topbar {
     flex-direction: column;
     align-items: flex-start;
+    gap: 0.7rem;
+    padding-bottom: 0.85rem;
+  }
+
+  .excel-topbar__actions,
+  .admin-export,
+  .attendance-history-filter__quick {
+    width: 100%;
+  }
+
+  .excel-topbar__actions .excel-btn,
+  .admin-export .excel-btn,
+  .attendance-history-filter__quick .excel-btn,
+  .attendance-history-filter > .excel-btn,
+  .meal-template-suggestion .excel-btn {
+    flex: 1 1 100%;
+    width: 100%;
   }
 
   .excel-inline-form {
@@ -1161,8 +1248,203 @@ body {
     align-items: stretch;
   }
 
+  .excel-inline-form .excel-select,
+  .excel-inline-form .excel-btn,
+  .excel-form .excel-btn,
+  .excel-input,
+  .excel-select {
+    width: 100%;
+  }
+
+  .attendance-history-filter,
+  .admin-filters,
+  .admin-mess-row,
+  .admin-ing-add,
+  .admin-cost-boxes,
+  .meal-template-suggestion {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .attendance-history-filter label,
+  .admin-filter-item,
+  .admin-reports label,
+  .admin-cost-box,
+  .admin-mess-input,
+  .admin-ing-add .excel-input {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+  }
+
+  .admin-page-intro {
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
   .admin-page-intro__title {
     font-size: 1.35rem;
+  }
+
+  .admin-page-intro__logout {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .admin-page-intro__meta {
+    width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-nav-bar {
+    padding: 0.7rem 0.65rem;
+  }
+
+  .admin-nav-bar__brand {
+    gap: 0.35rem;
+  }
+
+  .admin-brand {
+    font-size: 0.9rem;
+  }
+
+  .admin-nav-bar__tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-tab {
+    flex: none;
+    width: 100%;
+    padding: 0.65rem 0.5rem;
+    font-size: 0.86rem;
+  }
+
+  .admin-nav-bar__right {
+    flex-direction: column;
+    align-items: stretch;
+    border-left: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .admin-nav-bar__right::before {
+    align-self: center;
+  }
+
+  .admin-section-title--mess-highlight {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .admin-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .excel-table {
+    min-width: 560px;
+    font-size: 0.84rem;
+  }
+
+  .excel-table th,
+  .excel-table td {
+    padding: 0.48rem 0.55rem;
+  }
+
+  .admin-modal-backdrop {
+    padding: 0.75rem;
+  }
+
+  .admin-modal {
+    width: min(100%, 36rem) !important;
+    max-width: 100% !important;
+    max-height: calc(100vh - 1.5rem);
+    overflow: auto;
+    padding: 1rem;
+  }
+
+  .att-history-list--employee .att-history-day--card {
+    padding: 0.85rem;
+  }
+
+  .att-history-list--employee .att-history-title {
+    font-size: 1rem;
+  }
+
+  .att-history-list--employee .att-history-meal__line {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.15rem;
+  }
+}
+
+@media (max-width: 520px) {
+  .admin-employee-data .excel-table {
+    min-width: 0;
+  }
+
+  .admin-employee-data .excel-table thead {
+    display: none;
+  }
+
+  .admin-employee-data .excel-table,
+  .admin-employee-data .excel-table tbody,
+  .admin-employee-data .excel-table tr,
+  .admin-employee-data .excel-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .admin-employee-data .excel-table tbody tr {
+    margin: 0 0 0.85rem;
+    border: 1px solid var(--ml-border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--ml-surface);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+
+  .admin-employee-data .excel-table tbody tr td {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.9rem;
+    padding: 0.65rem 0.75rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--ml-border);
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-employee-data .excel-table tbody tr td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    max-width: 45%;
+    font-weight: 700;
+    color: var(--ml-muted);
+    text-align: left;
+  }
+
+  .admin-employee-data .excel-table tbody tr td:last-child {
+    border-bottom: 0;
+  }
+
+  .admin-employee-data .excel-table tbody tr td:last-child > div {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .admin-employee-data .excel-table tbody tr td:last-child .excel-btn {
+    flex: 1 1 100%;
+    min-height: 44px;
+  }
+
+  .admin-employee-data .excel-table tbody tr td[colspan] {
+    display: block;
+    text-align: center;
+  }
+
+  .admin-employee-data .excel-table tbody tr td[colspan]::before {
+    content: "";
+    display: none;
   }
 }
 

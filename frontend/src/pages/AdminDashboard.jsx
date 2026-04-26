@@ -1558,16 +1558,16 @@ export default function AdminDashboard({ hidePanelLogout = false }) {
                 ) : (
                   filteredEmployeeRows.map((row) => (
                     <tr key={row.id}>
-                      <td>{row.name}</td>
-                      <td>{row.username}</td>
-                      <td>{row.employeeId || "—"}</td>
-                      <td>
+                      <td data-label="Name">{row.name}</td>
+                      <td data-label="Username">{row.username}</td>
+                      <td data-label="Employee ID">{row.employeeId || "—"}</td>
+                      <td data-label="Created">
                         {row.createdAt
                           ? new Date(row.createdAt).toISOString().slice(0, 10)
                           : "—"}
                       </td>
-                      <td>{row.totalAttendance30Days ?? 0}</td>
-                      <td>
+                      <td data-label="Attendance">{row.totalAttendance30Days ?? 0}</td>
+                      <td data-label="Actions">
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
                           <button
                             type="button"
